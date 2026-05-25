@@ -2,6 +2,7 @@
 from __future__ import annotations
 import argparse
 import hashlib
+import sys
 from datetime import datetime
 
 MASK32 = 0xFFFFFFFF
@@ -114,18 +115,124 @@ def current_day() -> str:
     return DAYS[(datetime.now().weekday() + 1) % 7]
 
 
+def launch_gui() -> None:
+    """
+    Giao diện nhập username cho Bài 4 / WhichKeyIsIt.
+
+    Lưu ý riêng cho Monday:
+    - Nếu chọn Thứ 2/Monday, chương trình sẽ tạo thêm file xor0.rox.
+    - Hãy để file keygen này cùng thư mục với crackme trước khi Generate,
+      để file xor0.rox được sinh đúng trong thư mục crackme.
+    """
+    import os
+    import tkinter as tk
+    from tkinter import messagebox
+    from tkinter import ttk
+
+    root = tk.Tk()
+    root.title('Bài 4 - WhichKeyIsIt Keygen GUI')
+    root.resizable(False, False)
+
+    note_text = (
+        'NOTE Monday/Thứ 2: Nếu chọn Monday, hãy để file keygen này trong cùng thư mục crackme '
+        'trước khi Generate để chương trình sinh file xor0.rox đúng vị trí.'
+    )
+    note = tk.Label(root, text=note_text, wraplength=430, justify='left', fg='red')
+    note.grid(row=0, column=0, columnspan=2, padx=10, pady=(12, 6), sticky='w')
+
+    tk.Label(root, text='Username:').grid(row=1, column=0, padx=10, pady=6, sticky='w')
+    name_var = tk.StringVar(value='TestUser')
+    name_entry = tk.Entry(root, textvariable=name_var, width=40)
+    name_entry.grid(row=1, column=1, padx=10, pady=6)
+
+    tk.Label(root, text='Day:').grid(row=2, column=0, padx=10, pady=6, sticky='w')
+    day_var = tk.StringVar(value=current_day())
+    day_combo = ttk.Combobox(root, textvariable=day_var, values=DAYS, width=37, state='readonly')
+    day_combo.grid(row=2, column=1, padx=10, pady=6)
+
+    tk.Label(root, text='Serial / Result:').grid(row=3, column=0, padx=10, pady=6, sticky='nw')
+    result_text = tk.Text(root, width=42, height=7)
+    result_text.grid(row=3, column=1, padx=10, pady=6)
+
+    def write_result(text: str) -> None:
+        result_text.delete('1.0', 'end')
+        result_text.insert('1.0', text)
+
+    def create_monday_file(name: str) -> str:
+        b = name.encode('latin-1')
+        if len(b) < 4:
+            raise ValueError('Monday requires name length >= 4.')
+        mul = 0x03 if (b[3] ^ 0x02) == 0x7F else 0x02
+        xor_val = 0xFACE2AAD if mul == 0x03 else 0xFACE1850
+        file_bytes = [
+            0xDE, 0xC0, 0xAD, 0xDE, mul,
+            0x74, 0x6F, 0x73, 0x6C, 0x65, 0x65, 0x70, 0x66, 0x6F, 0x72,
+            0x65, 0x76, 0x65, 0x72, 0x69, 0x73, 0x6D, 0x79, 0x64, 0x72,
+            0x65, 0x61, 0x6D,
+            xor_val & 0xFF, (xor_val >> 8) & 0xFF,
+            (xor_val >> 16) & 0xFF, (xor_val >> 24) & 0xFF,
+        ]
+        rox_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'xor0.rox')
+        with open(rox_path, 'wb') as f:
+            f.write(bytes(file_bytes))
+        return rox_path
+
+    def generate_clicked() -> None:
+        name = name_var.get().strip()
+        day = day_var.get().strip().lower()
+        try:
+            serial = generate(name, day)
+            output = f'Username: {name}\nDay     : {day.capitalize()}\nSerial  : {serial}'
+            if day == 'monday':
+                rox_path = create_monday_file(name)
+                output += f'\n\n[Monday] Đã tạo file: {rox_path}'
+                output += '\nNhớ đặt file keygen trong thư mục crackme để crackme đọc được file xor0.rox.'
+            write_result(output)
+        except (RuntimeError, ValueError) as exc:
+            write_result(f'Error: {exc}')
+            messagebox.showerror('Lỗi', str(exc))
+
+    def generate_all_clicked() -> None:
+        name = name_var.get().strip()
+        lines = [f'Username: {name}', '']
+        for d in DAYS:
+            try:
+                result = generate(name, d)
+            except (RuntimeError, ValueError) as exc:
+                result = f'Error: {exc}'
+            lines.append(f'{d.capitalize():9}: {result}')
+        write_result('\n'.join(lines))
+
+    def copy_clicked() -> None:
+        content = result_text.get('1.0', 'end').strip()
+        if content:
+            root.clipboard_clear()
+            root.clipboard_append(content)
+            messagebox.showinfo('Copied', 'Đã copy kết quả vào clipboard.')
+
+    btn_frame = tk.Frame(root)
+    btn_frame.grid(row=4, column=0, columnspan=2, pady=(8, 12))
+    tk.Button(btn_frame, text='Generate', width=14, command=generate_clicked).pack(side='left', padx=5)
+    tk.Button(btn_frame, text='Generate All', width=14, command=generate_all_clicked).pack(side='left', padx=5)
+    tk.Button(btn_frame, text='Copy Result', width=14, command=copy_clicked).pack(side='left', padx=5)
+
+    name_entry.focus_set()
+    root.mainloop()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description='Keygen for Crackme 4 / WhichKeyIsIt.')
     parser.add_argument('name', nargs='?', help='Username entered in the crackme.')
     parser.add_argument('--day', default=None, help='Day of week (e.g. tuesday). Default: today.')
     parser.add_argument('--all', action='store_true', help='Print serials for all days.')
+    parser.add_argument('--gui', action='store_true', help='Mở giao diện nhập username')
     args = parser.parse_args()
 
-    interactive = args.name is None
+    if args.gui or (args.name is None and not args.all):
+        launch_gui()
+        return
+
     day = args.day if args.day else current_day()
-    if day.lower() == 'monday' and interactive:
-        print('Lưu ý: Hôm nay là Monday — hãy đặt file keygen này cùng thư mục với WhichKeyIsIt.exe trước khi chạy.')
-        print()
     name = args.name or input('Username: ').strip()
 
     if args.all:
@@ -140,11 +247,6 @@ def main() -> None:
             serial = generate(name, day)
         except (RuntimeError, ValueError) as exc:
             print(f'Error: {exc}')
-            if interactive:
-                try:
-                    input('\nPress Enter to exit...')
-                except EOFError:
-                    pass
             raise SystemExit(1)
         if day.lower() == 'monday':
             import os
@@ -161,15 +263,10 @@ def main() -> None:
             with open(rox_path, 'wb') as f:
                 f.write(bytes(file_bytes))
             print(f'[Monday] Đã tạo: {rox_path}')
+            print('Note: Nếu là Thứ 2/Monday, hãy để file keygen này trong thư mục crackme để file xor0.rox được sinh đúng vị trí.')
         print(f'Username: {name}')
         print(f'Day     : {day.capitalize()}')
         print(f'Serial  : {serial}')
-
-    if interactive:
-        try:
-            input('\nPress Enter to exit...')
-        except EOFError:
-            pass
 
 
 if __name__ == '__main__':
