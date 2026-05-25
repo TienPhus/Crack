@@ -5,6 +5,7 @@ Bai 2 - errors_keygenme Python keygen for lab/report use.
 
 from __future__ import annotations
 import argparse
+import sys
 
 # Mask 32-bit:
 # dùng để đảm bảo mọi phép toán luôn nằm trong phạm vi 32 bit
@@ -15,10 +16,6 @@ def u32(x: int) -> int:
     """
     Ép giá trị về unsigned 32-bit.
 
-    Trong ASM/C:
-    các thanh ghi 32-bit sẽ tự overflow.
-    Python thì integer không giới hạn,
-    nên cần mask lại bằng 0xFFFFFFFF.
     """
     return x & MASK32
 
@@ -252,25 +249,72 @@ def generate_key(name: str) -> str:
     return ''.join(out)
 
 
+def launch_gui() -> None:
+    """
+    Giao diện nhập username cho Bài 2.
+    """
+    import tkinter as tk
+    from tkinter import messagebox
+
+    root = tk.Tk()
+    root.title('Bài 2 - Keygen GUI')
+    root.resizable(False, False)
+
+    tk.Label(root, text='Username:').grid(row=0, column=0, padx=10, pady=(12, 6), sticky='w')
+    name_var = tk.StringVar(value='TestUser')
+    name_entry = tk.Entry(root, textvariable=name_var, width=38)
+    name_entry.grid(row=0, column=1, padx=10, pady=(12, 6))
+
+    tk.Label(root, text='Serial:').grid(row=1, column=0, padx=10, pady=6, sticky='nw')
+    serial_var = tk.StringVar()
+    serial_entry = tk.Entry(root, textvariable=serial_var, width=38, state='readonly')
+    serial_entry.grid(row=1, column=1, padx=10, pady=6)
+
+    def generate_clicked() -> None:
+        name = name_var.get()
+        try:
+            serial_var.set(generate_key(name))
+        except ValueError as exc:
+            messagebox.showerror('Lỗi', str(exc))
+
+    def copy_clicked() -> None:
+        serial = serial_var.get()
+        if serial:
+            root.clipboard_clear()
+            root.clipboard_append(serial)
+            messagebox.showinfo('Copied', 'Đã copy serial vào clipboard.')
+
+    btn_frame = tk.Frame(root)
+    btn_frame.grid(row=2, column=0, columnspan=2, pady=(8, 12))
+    tk.Button(btn_frame, text='Generate', width=14, command=generate_clicked).pack(side='left', padx=5)
+    tk.Button(btn_frame, text='Copy Serial', width=14, command=copy_clicked).pack(side='left', padx=5)
+
+    name_entry.focus_set()
+    root.mainloop()
+
+
 def main() -> None:
     """
-    Hàm main:
-    - đọc username từ command line
-    - sinh serial
+    Cách chạy:
+    - Double-click / không truyền tham số: mở GUI
+    - CLI: python bai2_keygen.py TestUser
+    - GUI thủ công: python bai2_keygen.py --gui
     """
-
-    parser = argparse.ArgumentParser()
-
-    # Nếu không nhập username
-    # -> dùng mặc định "TestUser"
-    parser.add_argument('name', nargs='?', default='TestUser')
-
+    parser = argparse.ArgumentParser(description='Bài 2 - errors_keygenme keygen')
+    parser.add_argument('name', nargs='?', help='Username cần tạo serial')
+    parser.add_argument('--gui', action='store_true', help='Mở giao diện nhập username')
     args = parser.parse_args()
 
+    if args.gui or args.name is None:
+        launch_gui()
+        return
+
     print(f'Name  : {args.name}')
-    print(f'Serial: {generate_key(args.name)}')
+    try:
+        print(f'Serial: {generate_key(args.name)}')
+    except ValueError as exc:
+        print(f'Lỗi: {exc}')
 
 
-# Điểm bắt đầu chương trình
 if __name__ == '__main__':
     main()
