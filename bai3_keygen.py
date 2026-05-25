@@ -5,6 +5,7 @@ Bai 3 - diablo2oo2 Crackme #09 Python keygen for lab/report use.
 
 from __future__ import annotations
 import argparse
+import sys
 
 # Bảng ký tự hợp lệ dùng trong quá trình mã hóa
 # Gồm:
@@ -17,11 +18,6 @@ ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
 def rol8(value: int, bits: int) -> int:
     """
     Hàm rotate left 8-bit.
-
-    Ví dụ:
-        value = 10010110b
-        rol8(value, 3)
-    sẽ quay vòng các bit sang trái 3 lần.
 
     &= 0xFF để đảm bảo chỉ giữ lại 8 bit thấp.
     """
@@ -64,14 +60,6 @@ def encrypt_name(name: str, rotated: str) -> str:
     """
     Hàm mã hóa username.
 
-    Ý tưởng:
-    - Khởi tạo dl bằng ký tự đầu tiên sau khi rotate bit.
-    - Với mỗi ký tự:
-        al = (ký_tự_hiện_tại XOR ký_tự_kế_tiếp) + dl
-    - Sau đó cập nhật dl.
-    - Dùng al để index vào bảng rotated.
-
-    Đây mô phỏng logic thường thấy trong crackme/keygen ASM.
     """
 
     # Nếu chuỗi rỗng -> trả về rỗng
@@ -148,27 +136,77 @@ def generate_serial(name: str) -> str:
     return ''.join(serial)
 
 
+def launch_gui() -> None:
+    """
+    Giao diện nhập username cho Bài 3.
+    """
+    import tkinter as tk
+    from tkinter import messagebox
+
+    root = tk.Tk()
+    root.title('Bài 3 - Keygen GUI')
+    root.resizable(False, False)
+
+    tk.Label(root, text='Username:').grid(row=0, column=0, padx=10, pady=(12, 6), sticky='w')
+    name_var = tk.StringVar(value='TestUser')
+    name_entry = tk.Entry(root, textvariable=name_var, width=38)
+    name_entry.grid(row=0, column=1, padx=10, pady=(12, 6))
+
+    filtered_var = tk.StringVar()
+    tk.Label(root, text='Filtered name:').grid(row=1, column=0, padx=10, pady=6, sticky='w')
+    filtered_entry = tk.Entry(root, textvariable=filtered_var, width=38, state='readonly')
+    filtered_entry.grid(row=1, column=1, padx=10, pady=6)
+
+    serial_var = tk.StringVar()
+    tk.Label(root, text='Serial:').grid(row=2, column=0, padx=10, pady=6, sticky='w')
+    serial_entry = tk.Entry(root, textvariable=serial_var, width=38, state='readonly')
+    serial_entry.grid(row=2, column=1, padx=10, pady=6)
+
+    def generate_clicked() -> None:
+        name = name_var.get()
+        filtered = sanitize_name(name)
+        filtered_var.set(filtered or '(empty)')
+        serial = generate_serial(name)
+        serial_var.set(serial)
+        if serial == 'Invalid Username':
+            messagebox.showwarning('Lưu ý', 'Username không có ký tự hợp lệ. Chỉ dùng 0-9, a-z, A-Z.')
+
+    def copy_clicked() -> None:
+        serial = serial_var.get()
+        if serial and serial != 'Invalid Username':
+            root.clipboard_clear()
+            root.clipboard_append(serial)
+            messagebox.showinfo('Copied', 'Đã copy serial vào clipboard.')
+
+    btn_frame = tk.Frame(root)
+    btn_frame.grid(row=3, column=0, columnspan=2, pady=(8, 12))
+    tk.Button(btn_frame, text='Generate', width=14, command=generate_clicked).pack(side='left', padx=5)
+    tk.Button(btn_frame, text='Copy Serial', width=14, command=copy_clicked).pack(side='left', padx=5)
+
+    name_entry.focus_set()
+    root.mainloop()
+
+
 def main() -> None:
     """
-    Hàm main:
-    - đọc username từ command line
-    - in username đã lọc
-    - sinh serial
+    Cách chạy:
+    - Double-click / không truyền tham số: mở GUI
+    - CLI: python bai3_keygen.py TestUser
+    - GUI thủ công: python bai3_keygen.py --gui
     """
-
-    parser = argparse.ArgumentParser()
-
-    # Nếu không nhập username
-    # -> dùng mặc định "TestUser"
-    parser.add_argument('name', nargs='?', default='TestUser')
-
+    parser = argparse.ArgumentParser(description='Bài 3 - diablo2oo2 Crackme #09 keygen')
+    parser.add_argument('name', nargs='?', help='Username cần tạo serial')
+    parser.add_argument('--gui', action='store_true', help='Mở giao diện nhập username')
     args = parser.parse_args()
+
+    if args.gui or args.name is None:
+        launch_gui()
+        return
 
     print(f'Input name   : {args.name}')
     print(f'Filtered name: {sanitize_name(args.name) or "(empty)"}')
     print(f'Serial       : {generate_serial(args.name)}')
 
 
-# Điểm bắt đầu chương trình
 if __name__ == '__main__':
     main()
