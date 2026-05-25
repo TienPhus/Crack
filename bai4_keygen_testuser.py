@@ -1,23 +1,12 @@
 #!/usr/bin/env python3
-"""
-Bai 4 - day-based keygen Python rewrite for lab/report use.
-Default example: Name = TestUser, day = Sunday.
-
-Note:
-- Sunday is hard-coded and does not depend on name.
-- Tuesday depends on CPUID in the original crackme. This script uses the CPUID
-  values observed during this report; change CPUID_EAX0/CPUID_EAX1 to match
-  another machine if needed.
-- Saturday is very large in the original source and requires name length >= 13;
-  for TestUser it is invalid, so this script reports that condition.
-"""
 from __future__ import annotations
 import argparse
 import hashlib
+from datetime import datetime
 
 MASK32 = 0xFFFFFFFF
-CPUID_EAX0 = (0x00000015, 0x756E6547, 0x6C65746E, 0x49656E69)  # eax, ebx, ecx, edx
-CPUID_EAX1 = (0x000606A6, 0x14200800, 0xFEDA3223, 0x1F8BFBFF)  # eax, ebx, ecx, edx
+CPUID_EAX0 = (0x00000015, 0x756E6547, 0x6C65746E, 0x49656E69)
+CPUID_EAX1 = (0x000606A6, 0x14200800, 0xFEDA3223, 0x1F8BFBFF)
 
 
 def bswap32(x: int) -> int:
@@ -59,8 +48,8 @@ def tuesday(name: str) -> str:
         mul = (mul * len(b)) & MASK32
         p2 = ((p2 ^ mul) << 4) & MASK32
         mul &= 0xFFFFFF00
-    p2 = ((p2 >> 16) ^ p2) & 0xFFFF
-    return 'T10-' + tohex_r_int(p2, 2)
+    p2 = (p2 ^ (p2 >> 16)) & 0xFFFF
+    return f'T10-{p2:04X}'
 
 
 def wednesday(name: str) -> str:
@@ -98,13 +87,14 @@ def friday(name: str) -> str:
 
 
 def saturday(name: str) -> str:
-    if len(name) < 13:
-        return 'Invalid: Saturday requires name length >= 13.'
-    return 'Not implemented in this compact report script; original uses custom hash + Whirlpool + RIPEMD-256.'
+    raise RuntimeError('Saturday branch is not implemented; original uses a larger custom hash path.')
 
 
 def sunday(name: str | None = None) -> str:
     return 'A10-57617274-686F67'
+
+
+DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
 
 
 def generate(name: str, day: str) -> str:
@@ -119,19 +109,67 @@ def generate(name: str, day: str) -> str:
     return funcs[day](name)
 
 
+def current_day() -> str:
+    # Match Windows SYSTEMTIME: Sunday=0, Monday=1, ..., Saturday=6
+    return DAYS[(datetime.now().weekday() + 1) % 7]
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument('name', nargs='?', default='TestUser')
-    parser.add_argument('--day', default='sunday')
-    parser.add_argument('--all', action='store_true')
+    parser = argparse.ArgumentParser(description='Keygen for Crackme 4 / WhichKeyIsIt.')
+    parser.add_argument('name', nargs='?', help='Username entered in the crackme.')
+    parser.add_argument('--day', default=None, help='Day of week (e.g. tuesday). Default: today.')
+    parser.add_argument('--all', action='store_true', help='Print serials for all days.')
     args = parser.parse_args()
+
+    interactive = args.name is None
+    day = args.day if args.day else current_day()
+    if day.lower() == 'monday' and interactive:
+        print('Lưu ý: Hôm nay là Monday — hãy đặt file keygen này cùng thư mục với WhichKeyIsIt.exe trước khi chạy.')
+        print()
+    name = args.name or input('Username: ').strip()
+
     if args.all:
-        for d in ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']:
-            print(f'{d.capitalize():9}: {generate(args.name, d)}')
+        for d in DAYS:
+            try:
+                result = generate(name, d)
+            except (RuntimeError, ValueError) as exc:
+                result = f'Error: {exc}'
+            print(f'{d.capitalize():9}: {result}')
     else:
-        print(f'Name  : {args.name}')
-        print(f'Day   : {args.day.capitalize()}')
-        print(f'Serial: {generate(args.name, args.day)}')
+        try:
+            serial = generate(name, day)
+        except (RuntimeError, ValueError) as exc:
+            print(f'Error: {exc}')
+            if interactive:
+                try:
+                    input('\nPress Enter to exit...')
+                except EOFError:
+                    pass
+            raise SystemExit(1)
+        if day.lower() == 'monday':
+            import os
+            b = name.encode('latin-1')
+            mul = 0x03 if (b[3] ^ 0x02) == 0x7F else 0x02
+            xor_val = 0xFACE2AAD if mul == 0x03 else 0xFACE1850
+            file_bytes = [0xDE, 0xC0, 0xAD, 0xDE, mul,
+                          0x74,0x6F,0x73,0x6C,0x65,0x65,0x70,0x66,0x6F,0x72,
+                          0x65,0x76,0x65,0x72,0x69,0x73,0x6D,0x79,0x64,0x72,
+                          0x65,0x61,0x6D,
+                          xor_val & 0xFF, (xor_val >> 8) & 0xFF,
+                          (xor_val >> 16) & 0xFF, (xor_val >> 24) & 0xFF]
+            rox_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'xor0.rox')
+            with open(rox_path, 'wb') as f:
+                f.write(bytes(file_bytes))
+            print(f'[Monday] Đã tạo: {rox_path}')
+        print(f'Username: {name}')
+        print(f'Day     : {day.capitalize()}')
+        print(f'Serial  : {serial}')
+
+    if interactive:
+        try:
+            input('\nPress Enter to exit...')
+        except EOFError:
+            pass
 
 
 if __name__ == '__main__':
