@@ -5,6 +5,7 @@ Bai 1 - KeygenMe1 Python keygen.
 from __future__ import annotations
 import argparse
 import socket
+import sys
 
 # Mask 32-bit:
 # dùng để đảm bảo mọi phép toán luôn nằm trong phạm vi 32 bit
@@ -71,10 +72,6 @@ def bswap32(value: int) -> int:
 
     Đảo thứ tự các byte trong 1 DWORD.
 
-    Ví dụ:
-        0x12345678
-    ->  0x78563412
-
     Tương đương lệnh: bswap ebx / bswap edi / bswap esi
     """
 
@@ -92,30 +89,6 @@ def computer_hash(computer_name: str) -> int:
     """
     Tính hash từ tên máy tính.
 
-    Dịch từ hàm ComputerName proc trong ASM:
-        invoke GetComputerName, addr szComputerName, addr nSize
-        MOV esi, offset szComputerName
-        xor eax,eax / xor edx,edx / xor ebx,ebx / xor ecx,ecx
-        .while word ptr ds:[esi]
-            mov al,  byte ptr ds:[esi]
-            mov dl,  byte ptr ds:[esi+1]
-            ror al,  4
-            not dl
-            add al,  dl
-            add ebx, eax
-            imul edx,eax
-            add ecx, edx
-            xchg edx,ebx
-            add esi, 2
-        .endw
-        bswap ebx
-        add ebx, ecx
-        mov dwCompuHash, ebx
-
-    Lưu ý quan trọng:
-        Các lệnh mov al / mov dl chỉ thay byte thấp,
-        3 byte cao của EAX / EDX được GIỮ NGUYÊN từ vòng trước.
-        Đây là đặc điểm x86 partial register write.
     """
 
     # Encode tên máy thành bytes ASCII
@@ -181,7 +154,6 @@ def generate_serial(computer_name: str, user_name: str) -> str:
     """
     Sinh serial từ tên máy và username.
 
-    Dịch từ hàm CalculateSerialPart1 proc trong ASM.
     Serial gồm 3 giai đoạn tính toán:
         Giai đoạn 1 – tính comp_hash từ tên máy
         Giai đoạn 2 – vòng lặp qua từng ký tự username
@@ -287,41 +259,78 @@ def generate_serial(computer_name: str, user_name: str) -> str:
     return f'{ecx:08X}-{edx:08X}-{edi:08X}-{esi:08X}'
 
 
+def launch_gui() -> None:
+    """
+    Giao diện nhập username cho Bài 1.
+    - Nhập username
+    - Có thể nhập ComputerName thủ công, hoặc để mặc định theo máy hiện tại
+    - Bấm Generate để sinh serial
+    """
+    import tkinter as tk
+    from tkinter import messagebox
+
+    root = tk.Tk()
+    root.title('Bài 1 - Keygen GUI')
+    root.resizable(False, False)
+
+    default_computer = socket.gethostname().upper()
+
+    tk.Label(root, text='Username:').grid(row=0, column=0, padx=10, pady=(12, 6), sticky='w')
+    name_var = tk.StringVar(value='TestUser')
+    name_entry = tk.Entry(root, textvariable=name_var, width=36)
+    name_entry.grid(row=0, column=1, padx=10, pady=(12, 6))
+
+    tk.Label(root, text='ComputerName:').grid(row=1, column=0, padx=10, pady=6, sticky='w')
+    computer_var = tk.StringVar(value=default_computer)
+    computer_entry = tk.Entry(root, textvariable=computer_var, width=36)
+    computer_entry.grid(row=1, column=1, padx=10, pady=6)
+
+    tk.Label(root, text='Serial:').grid(row=2, column=0, padx=10, pady=6, sticky='nw')
+    serial_var = tk.StringVar()
+    serial_entry = tk.Entry(root, textvariable=serial_var, width=36, state='readonly')
+    serial_entry.grid(row=2, column=1, padx=10, pady=6)
+
+    def generate_clicked() -> None:
+        name = name_var.get().strip()
+        computer = computer_var.get().strip().upper() or default_computer
+        try:
+            serial_var.set(generate_serial(computer, name))
+        except ValueError as exc:
+            messagebox.showerror('Lỗi', str(exc))
+
+    def copy_clicked() -> None:
+        serial = serial_var.get()
+        if serial:
+            root.clipboard_clear()
+            root.clipboard_append(serial)
+            messagebox.showinfo('Copied', 'Đã copy serial vào clipboard.')
+
+    btn_frame = tk.Frame(root)
+    btn_frame.grid(row=3, column=0, columnspan=2, pady=(8, 12))
+    tk.Button(btn_frame, text='Generate', width=14, command=generate_clicked).pack(side='left', padx=5)
+    tk.Button(btn_frame, text='Copy Serial', width=14, command=copy_clicked).pack(side='left', padx=5)
+
+    name_entry.focus_set()
+    root.mainloop()
+
+
 def main() -> None:
-    """
-    Hàm main:
-    - đọc username từ command line (mặc định: TestUser)
-    - tự lấy tên máy từ hệ điều hành và uppercase
-    - sinh serial
-    """
 
     parser = argparse.ArgumentParser(
         description='KeygenMe1 – keygen dịch từ ASM gốc của cosmos/qwertydid'
     )
-
-    # Nếu không nhập username
-    # -> dùng mặc định "TestUser"
-    parser.add_argument(
-        'name', nargs='?', default='TestUser',
-        help='Username cần tạo serial (4–30 ký tự ASCII)'
-    )
-
-    # Nếu không nhập --computer
-    # -> tự lấy hostname của máy và uppercase
-    parser.add_argument(
-        '--computer', default=None,
-        help='Tên máy tính (mặc định: tự lấy từ hệ điều hành, tự uppercase)'
-    )
-
+    parser.add_argument('name', nargs='?', help='Username cần tạo serial (4–30 ký tự ASCII)')
+    parser.add_argument('--computer', default=None, help='Tên máy tính, mặc định tự lấy từ hệ điều hành')
+    parser.add_argument('--gui', action='store_true', help='Mở giao diện nhập username')
     args = parser.parse_args()
 
-    # Tự lấy hostname và uppercase
-    # khớp với GetComputerName trên Windows
-    computer = (args.computer or socket.gethostname()).upper()
+    if args.gui or args.name is None:
+        launch_gui()
+        return
 
+    computer = (args.computer or socket.gethostname()).upper()
     print(f'ComputerName : {computer}')
     print(f'Name         : {args.name}')
-
     try:
         serial = generate_serial(computer, args.name)
         print(f'Serial       : {serial}')
@@ -329,6 +338,5 @@ def main() -> None:
         print(f'Lỗi: {e}')
 
 
-# Điểm bắt đầu chương trình
 if __name__ == '__main__':
     main()
